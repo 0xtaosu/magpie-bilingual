@@ -1,0 +1,27 @@
+# Secrets / credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*
+*secret*
+*token*
+plugin-auth.json
+plugins.json
+
+# Runtime data / private traces
+logs/
+*.log
+sessions/
+traces/
+cache/
+.data/
+.tmp/
+
+# Build / OS
+node_modules/
+dist/
+.DS_Store
+.idea/
+.vscode/
