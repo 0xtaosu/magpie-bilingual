@@ -4,11 +4,21 @@ MAGPIE 原生双向翻译 Provider 插件。Claude Code 通过 Anthropic Message
 
 目标模型不限于 Claude：支持 MAGPIE 已启用的 Codex、Claude、Grok 等原生 `provider/model`。协议转换和原账户鉴权由 MAGPIE 完成。插件不读取其他 Provider 的订阅凭据、不修改 MAGPIE 源码、不部署独立代理。
 
-版本：`0.1.0`，候选实现。自动回归、隔离宿主加载及真实 Codex 回环已验证；真实 DeepSeek Flash → Codex → DeepSeek Flash 的单轮请求也已通过，翻译质量与性能仍需完整验收。具体证据和限制见 [P0 报告](docs/p0-report.md)。
+版本：`0.2.0`，候选实现。自动回归、隔离宿主加载及真实 Codex 回环已验证；真实 DeepSeek Flash → Codex → DeepSeek Flash 的单轮请求也已通过，翻译质量与性能仍需完整验收。具体证据和限制见 [P0 报告](docs/p0-report.md)。
 
 ## 安装与配置
 
 需要正在运行的 MAGPIE、至少一个已启用的原生模型，以及一个 OpenAI-compatible 翻译服务的 API Key。运行插件使用 MAGPIE 自带的 Bun 宿主，无需安装本项目依赖或构建。
+
+### 可视化设置页
+
+打开 MAGPIE 窗口左侧 **Plugins → 双语桥接设置**。设置页可以修改虚拟模型别名、工作模型的供应商与模型 ID、翻译接口地址与翻译模型，并分别开关输入/输出翻译。保存后重新选择 `bilingual/别名`；新别名如果没有出现在模型目录，需要在 **供应商 → Bilingual Bridge → 模型**中启用它。页面不会显示或保存 API Key，密钥仍在供应商登录处管理。
+
+页面可读取 MAGPIE 的供应商名称列表，但官方页面接口不提供模型 ID 列表，因此模型 ID 需要按 MAGPIE 模型目录填写。已有多个虚拟别名时，设置页每次编辑一个别名，其他映射保持不变。
+
+如果窗口未显示设置页，确认已安装本项目最新版并在 MAGPIE 的 Plugins 页面重新加载插件；下面的命令行配置仍可使用。
+
+### 命令行配置
 
 1. 在 MAGPIE → Plugins → Add a plugin 中选择本项目文件夹，或：
 
