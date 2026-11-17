@@ -20,7 +20,7 @@ export default async function BilingualBridge(_input, options = {}) {
     },
     auth: {
       provider: "bilingual",
-      methods: [{ type: "api", label: "翻译服务 API Key（所选文本将发送给该服务）" }],
+      methods: [{ type: "api", label: "翻译服务 API Key（用于中英互译，自然语言文本将发送至所选翻译接口）" }],
       loader: async (getAuth) => {
         const bridge = await createBridge(options, async () => {
           const auth = await getAuth();

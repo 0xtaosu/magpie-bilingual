@@ -12,48 +12,56 @@
   <main>
     <header class="intro">
       <h1>双语桥接</h1>
-      <p class="hint">中文输入转为英文，模型回复译回中文。仅翻译自然语言，图片和代码透传。</p>
+      <p class="hint">将中文提问译为英文发给工作模型，再把回复译回中文；代码、图片与工具调用保持原样。</p>
+      <div id="preview-notice" class="notice" role="status" aria-live="polite" hidden></div>
     </header>
 
     <form id="settings">
       <section class="card">
         <h2>工作模型</h2>
-        <p class="hint">实际回答问题、执行任务的模型。</p>
+        <p class="hint">实际处理任务并生成回答的上游模型。</p>
+        <div id="route-tabs" class="route-tabs" hidden></div>
         <div class="grid">
-          <label>供应商 <select id="provider" name="provider" required disabled><option value="">正在加载供应商…</option></select></label>
-          <label>模型 ID <input id="model" name="model" required autocomplete="off" spellcheck="false" placeholder="gpt-6-sol" aria-describedby="model-help"></label>
+          <label>供应商 <select id="provider" name="provider" required disabled><option value="">正在读取供应商…</option></select></label>
+          <label>模型 ID <input id="model" name="model" required autocomplete="off" spellcheck="false" placeholder="例如 gpt-5.4" aria-describedby="model-help"></label>
         </div>
-        <p id="model-help" class="hint">模型 ID 从 MAGPIE 模型目录复制，不含供应商前缀。</p>
+        <p id="model-help" class="hint">从 MAGPIE 模型目录复制模型 ID，不含供应商前缀（直接粘贴「供应商/模型」会自动拆分）。</p>
         <p id="route-preview" class="preview"></p>
       </section>
 
       <section class="card">
         <h2>翻译服务</h2>
-        <p class="hint">负责中英互译。切换服务后，请在供应商登录处更新对应的 API Key。</p>
+        <p class="hint">负责中英互译的接口，需兼容 OpenAI Chat Completions 协议。对话中的自然语言会发送至该服务。</p>
         <div class="grid">
-          <label>接口地址 <input id="base-url" name="baseURL" type="url" required autocomplete="off" spellcheck="false" placeholder="https://api.deepseek.com"></label>
-          <label>翻译模型 <input id="translator-model" name="translatorModel" required autocomplete="off" spellcheck="false" placeholder="deepseek-flash"></label>
+          <label>接口地址 (HTTPS) <input id="base-url" name="baseURL" type="url" required autocomplete="off" spellcheck="false" placeholder="https://api.deepseek.com" aria-describedby="translator-help"></label>
+          <label>翻译模型 <input id="translator-model" name="translatorModel" required autocomplete="off" spellcheck="false" placeholder="例如 deepseek-chat"></label>
         </div>
-        <p class="hint">接口需兼容 OpenAI Chat Completions。所选文本会发送给该服务；API Key 在「供应商 → 双语桥接」中管理。</p>
+        <p id="translator-help" class="hint">请求自动拼接 /chat/completions。首次配置或更换服务后，请在「供应商 › 双语桥接」中填写对应的 API Key。</p>
       </section>
 
       <section class="card">
-        <h2>翻译</h2>
+        <h2>翻译规则</h2>
         <div class="switches">
-          <label><input id="enabled" type="checkbox"><span><strong>启用翻译</strong><small>关闭时仍转发到所选工作模型。</small></span></label>
+          <label><input id="enabled" type="checkbox"><span><strong>启用双语翻译</strong><small>关闭后暂停翻译，所有请求直接转发给所选工作模型。</small></span></label>
         </div>
-        <details>
-          <summary>更多设置</summary>
-          <label class="alias-field">模型别名 <input id="alias" name="alias" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" autocomplete="off" placeholder="coding"><small>客户端选择 bilingual/别名。修改别名会保留原有映射。</small></label>
-          <div class="switches">
-            <label><input id="input-translation" type="checkbox"><span>输入译为英文</span></label>
-            <label><input id="output-translation" type="checkbox"><span>回复译为中文</span></label>
+        <div id="direction-group" class="switches sub-switches">
+          <label><input id="input-translation" type="checkbox"><span><strong>中文输入译为英文</strong><small>发送前将提问中的中文译为英文；若翻译失败则中止发送，避免原文误发。</small></span></label>
+          <label><input id="output-translation" type="checkbox"><span><strong>模型回复译回中文</strong><small>将模型回复的自然语言译为简体中文；若翻译暂不可用则显示原文并附提示。</small></span></label>
+        </div>
+        <p id="direction-hint" class="hint warn-hint" hidden>两个翻译方向均未勾选，当前不会执行任何翻译。</p>
+
+        <details id="advanced">
+          <summary>高级与调试</summary>
+          <div class="advanced-body">
+            <label class="alias-field">客户端模型别名 <input id="alias" name="alias" required pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" autocomplete="off" spellcheck="false" placeholder="coding"><small>客户端通过 bilingual/&lt;别名&gt; 选择本插件（默认 coding）。修改别名会新增一条路由映射并保留原有别名。</small></label>
+            <div class="switches">
+              <label><input id="preview-input" type="checkbox"><span><strong>仅预览发出的译文（调试模式）</strong><small>开启期间，对话仅回显处理后的请求文本，不调用工作模型。用于核对英文译文与代码保留效果；排查后请关闭、保存并重新加载插件。</small></span></label>
+            </div>
           </div>
-          <p class="hint">输入翻译失败时停止请求；回复翻译失败时默认显示原文并提示。</p>
         </details>
       </section>
 
-      <footer><span id="status" role="status" aria-live="polite">正在加载设置…若长时间未完成，请重新加载插件。</span><button id="save" type="submit" disabled>保存设置</button></footer>
+      <footer><span id="status" role="status" aria-live="polite">正在读取设置…若长时间未响应，请在「插件」页重新加载。</span><button id="save" type="submit" disabled>保存设置</button></footer>
     </form>
   </main>
 </body>

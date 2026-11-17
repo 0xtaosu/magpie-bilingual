@@ -88,6 +88,50 @@ test("JSON roundtrip translates only user and assistant text", async () => {
   assert.equal(instance.metrics.translation_call, 2);
 });
 
+test("preview shows translated text without sending messages or token counts to target", async () => {
+  const instance = await fixture({ config: { previewInput: true, logLevel: "info" } });
+  const image = { type: "image", source: { type: "base64", data: "image-secret", media_type: "image/png" } };
+  const body = { system: "中文 system", messages: [{ role: "user", content: [
+    image, { type: "text", text: "你好 `代码`" }, { type: "tool_result", tool_use_id: "tool-1", content: "秘密" },
+  ] }] };
+  const response = await instance.request(body);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const text = (await response.json()).content[0].text;
+  assert.match(text, /Hello `代码`/);
+  assert.match(text, /system:\n中文 system/);
+  assert.match(text, /\[image，未显示\]/);
+  assert.ok(!text.includes("image-secret"));
+  assert.ok(!text.includes("秘密"));
+  assert.equal(instance.calls.upstream.length, 0);
+  assert.ok(!instance.calls.logs.join(" ").includes("Hello"));
+  const count = await instance.fetch("https://bilingual.invalid/v1/messages/count_tokens", {
+    method: "POST", body: JSON.stringify({ model: "test", messages: [{ role: "user", content: "你好" }] }),
+  });
+  assert.deepEqual(await count.json(), { input_tokens: 0 });
+  assert.equal(instance.calls.translations.length, 1);
+  assert.equal(instance.calls.upstream.length, 0);
+});
+
+test("streaming preview returns a valid event sequence without target calls", async () => {
+  const instance = await fixture({ config: { previewInput: true } });
+  const response = await instance.request({ stream: true });
+  assert.equal(response.headers.get("content-type"), "text/event-stream");
+  const events = (await response.text()).trim().split("\n\n").map((part) => JSON.parse(part.slice(part.indexOf("data: ") + 6)));
+  assert.deepEqual(events.map((event) => event.type), ["message_start", "content_block_start", "content_block_delta",
+    "content_block_stop", "message_delta", "message_stop"]);
+  assert.match(events[2].delta.text, /Hello/);
+  assert.equal(instance.calls.upstream.length, 0);
+});
+
+test("preview displays original text when translation is off", async () => {
+  const instance = await fixture({ config: { previewInput: true, enable: false } });
+  const response = await instance.request();
+  assert.match((await response.json()).content[0].text, /user:\n你好/);
+  assert.equal(instance.calls.translations.length, 0);
+  assert.equal(instance.calls.upstream.length, 0);
+});
+
 for (const status of [401, 429, 500]) {
   test(`input HTTP ${status} blocks target model`, async () => {
     const instance = await fixture({ translate: () => new Response("private-error", { status }) });
