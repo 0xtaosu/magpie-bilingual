@@ -25,6 +25,7 @@ async function start() {
   const first = Object.entries(targets)[0] ?? ["coding", ""];
   const { provider, model } = splitTarget(first[1]);
   const select = element("provider");
+  select.replaceChildren();
   const providers = providerChoices(available);
   if (provider && !providers.some((entry) => entry.id === provider)) providers.push({ id: provider, name: provider });
   for (const entry of providers) {
@@ -49,6 +50,9 @@ async function start() {
   element("output-translation").checked = current.outputTranslation !== false;
   for (const id of ["alias", "provider", "model"]) element(id).addEventListener("input", preview);
   preview();
+  select.disabled = !providers.length;
+  element("save").disabled = !providers.length;
+  status(providers.length ? "" : "未找到供应商，请先在 MAGPIE 中添加并启用工作模型。");
 
   element("settings").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -71,6 +75,9 @@ async function start() {
     } finally {
       button.disabled = false;
     }
+  });
+  element("alias").addEventListener("invalid", () => {
+    element("alias").closest("details").open = true;
   });
 }
 
