@@ -28,7 +28,7 @@ export async function configuration(options = {}) {
       throw new Error("BILINGUAL_INVALID_TARGET");
     }
   }
-  for (const key of ["enable", "inputTranslation", "outputTranslation", "translateSystem"]) {
+  for (const key of ["enable", "inputTranslation", "outputTranslation", "translateSystem", "previewInput"]) {
     if (options[key] !== undefined && typeof options[key] !== "boolean") throw new Error("BILINGUAL_INVALID_CONFIG");
   }
   if (!["english", "error"].includes(options.outputFallback ?? "english")) throw new Error("BILINGUAL_INVALID_CONFIG");
@@ -42,6 +42,7 @@ export async function configuration(options = {}) {
     inputTranslation: options.inputTranslation ?? true,
     outputTranslation: options.outputTranslation ?? true,
     translateSystem: options.translateSystem ?? false,
+    previewInput: options.previewInput ?? false,
     targetModels,
     gateway: validateGateway(options.gateway ?? await discoverGateway()),
     timeoutMs: integer(options.timeoutMs, 120000, 100, 600000),

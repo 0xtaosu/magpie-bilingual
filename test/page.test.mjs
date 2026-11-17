@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { providerChoices, splitTarget, makeOptions } from "../page/settings.js";
+import {
+  providerChoices,
+  splitTarget,
+  normalizeBaseURL,
+  resolveModelInput,
+  makeOptions,
+} from "../page/settings.js";
 import { configuration } from "../src/config.mjs";
 
 test("settings page is declared with a scoped read permission", async () => {
@@ -30,6 +36,7 @@ test("visual form saves a native model and translator without dropping other opt
     alias: "coding", provider: "codex", model: "gpt-6-sol",
     baseURL: "https://api.deepseek.com/", translatorModel: "deepseek-flash",
     enable: true, inputTranslation: true, outputTranslation: false,
+    previewInput: true,
   });
   assert.equal(result.targetModels.coding, "codex/gpt-6-sol");
   assert.equal(result.targetModels.second, "grok/grok-4.7");
@@ -37,6 +44,7 @@ test("visual form saves a native model and translator without dropping other opt
   assert.equal(result.translator.retries, 2);
   assert.equal(result.cacheTTL, 5000);
   assert.equal(result.outputTranslation, false);
+  assert.equal(result.previewInput, true);
   assert.deepEqual(result.translator.trustedOrigins, ["https://api.deepseek.com"]);
   await configuration(result);
   assert.equal(current.targetModels.coding, "codex/old");
@@ -58,7 +66,31 @@ test("visual form blocks invalid routes and insecure translation URLs", () => {
     enable: true, inputTranslation: true, outputTranslation: true };
   for (const change of [
     { alias: "../invalid" }, { provider: "bilingual" }, { provider: "group" },
-    { model: "nested/model" }, { baseURL: "http://127.0.0.1:8080" },
+    { model: "nested/model" }, { model: "bilingual/coding" }, { baseURL: "http://127.0.0.1:8080" },
     { baseURL: "https://user:password@api.deepseek.com" }, { translatorModel: "" },
   ]) assert.throws(() => makeOptions({}, { ...input, ...change }));
+});
+
+test("helpers normalize pasted chat/completions endpoints and provider/model strings", () => {
+  assert.equal(normalizeBaseURL("https://api.deepseek.com/chat/completions/"), "https://api.deepseek.com");
+  assert.equal(normalizeBaseURL("https://api.openai.com/v1/chat/completions"), "https://api.openai.com/v1");
+  assert.deepEqual(
+    resolveModelInput("anthropic", "codex/gpt-5.4", ["anthropic", "codex"]),
+    { provider: "codex", model: "gpt-5.4" },
+  );
+  assert.deepEqual(
+    resolveModelInput("codex", "unknown/gpt-5.4", ["codex"]),
+    { provider: "codex", model: "unknown/gpt-5.4" },
+  );
+  const saved = makeOptions({}, {
+    alias: "coding",
+    provider: "codex",
+    model: "gpt-5.4",
+    baseURL: "https://api.openai.com/v1/chat/completions",
+    translatorModel: "gpt-4o-mini",
+    enable: true,
+    inputTranslation: true,
+    outputTranslation: true,
+  });
+  assert.equal(saved.translator.baseURL, "https://api.openai.com/v1");
 });

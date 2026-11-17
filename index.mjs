@@ -4,7 +4,7 @@ import { configuration } from "./src/config.mjs";
 export default async function BilingualBridge(_input, options = {}) {
   const settings = await configuration(options);
   const models = Object.fromEntries(Object.keys(settings.targetModels).map((alias) => [alias, {
-    name: `Bilingual · ${alias}`,
+    name: `双语桥接 · ${alias}`,
     tool_call: true,
     modalities: { input: ["text", "image"] },
   }]));
@@ -12,7 +12,7 @@ export default async function BilingualBridge(_input, options = {}) {
     config: async (config) => {
       config.provider ??= {};
       config.provider.bilingual ??= {
-        name: "Bilingual Bridge",
+        name: "双语桥接",
         npm: "@ai-sdk/anthropic",
         api: "https://bilingual.invalid/v1",
         models,
@@ -20,7 +20,7 @@ export default async function BilingualBridge(_input, options = {}) {
     },
     auth: {
       provider: "bilingual",
-      methods: [{ type: "api", label: "翻译服务 API Key（所选文本将发送给该服务）" }],
+      methods: [{ type: "api", label: "翻译服务 API Key（用于中英互译，自然语言文本将发送至所选翻译接口）" }],
       loader: async (getAuth) => {
         const bridge = await createBridge(options, async () => {
           const auth = await getAuth();
