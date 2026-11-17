@@ -23,6 +23,8 @@ try {
         throw new Error("P0_HOST_PROVIDER_MISSING");
       }
       console.log("P0_HOST_LOAD_OK: isolated MAGPIE discovered bilingual");
+      const page = output.plugins?.find((plugin) => plugin.spec === resolve("."));
+      if (!page) throw new Error("P0_HOST_PAGE_MISSING");
     }
   }
 } catch (error) {
