@@ -1,0 +1,26 @@
+{
+  "enable": true,
+  "inputTranslation": true,
+  "outputTranslation": true,
+  "translateSystem": false,
+  "targetModels": {
+    "coding": "codex/REPLACE_WITH_ENABLED_MODEL_ID"
+  },
+  "translator": {
+    "baseURL": "https://api.deepseek.com",
+    "trustedOrigins": ["https://api.deepseek.com"],
+    "model": "REPLACE_WITH_YOUR_TRANSLATION_MODEL",
+    "temperature": 0,
+    "timeoutMs": 15000,
+    "retries": 1,
+    "concurrency": 3,
+    "chunkChars": 2000,
+    "pricePerMillion": { "input": 0, "output": 0 }
+  },
+  "timeoutMs": 120000,
+  "maxTextChars": 100000,
+  "cacheTTL": 1800000,
+  "cacheEntries": 256,
+  "outputFallback": "english",
+  "logLevel": "error"
+}

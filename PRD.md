@@ -1,5 +1,7 @@
 # MAGPIE Bilingual Bridge — 产品需求文档（PRD）
 
+> 2026-11-17 范围补充（用户确认）：目标模型不再限于 Claude，可使用 MAGPIE 已配置的任意原生 Provider/model，包括 Codex。下文“Claude 上游/原 Claude 账户”的路由和验收要求相应扩展为“所选原生目标模型/其既有账户”；客户端首期仍使用 Anthropic Messages API。图片原样透传，只翻译自然语言文字，代码不翻译。实现状态见 `docs/p0-report.md`；原需求基线保留供追溯。
+
 > 版本：v0.1.0 ｜ 日期：2026-11-14 ｜ 状态：需求基线（待 P0 技术验证）
 > 项目类型：MAGPIE 原生插件 ｜ 目标客户端：Claude Code ｜ 首期协议：Anthropic Messages API
 > 产品原则：不修改 MAGPIE 源码；不部署独立 HTTP 代理；不替换现有 Claude 登录方式。

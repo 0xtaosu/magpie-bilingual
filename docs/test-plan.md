@@ -1,5 +1,14 @@
 # MVP 测试计划
 
+## 当前实现的执行入口（2026-11-17）
+
+- `npm test`：离线自动回归，覆盖协议、代码/图片透传、失败、缓存及取消。
+- `npm run test:host`：隔离 HOME 的生产插件加载。
+- `npm run probe -- provider/model`：真实网关原账户 JSON/SSE 探针。
+- `npm run test:live -- provider/model`：隔离宿主同实例回环和真实原生目标合成请求，翻译使用固定替身。
+
+目标模型可选 Codex 等原生模型，不再限于 Claude。实测证据与未完成验收以 [P0 报告](p0-report.md) 为准；自动测试通过不等于真实翻译质量/性能已通过。
+
 ## 环境与原则
 
 - 使用隔离的 MAGPIE HOME 测试插件加载，避免覆盖用户现有配置。

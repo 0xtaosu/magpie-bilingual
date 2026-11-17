@@ -1,0 +1,17 @@
+{
+  "name": "magpie-bilingual-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MAGPIE bilingual provider for Claude Code and native models including Codex",
+  "type": "module",
+  "main": "./index.mjs",
+  "files": ["index.mjs", "src", "README.md", "config.example.json", "PRD.md", "docs", "scripts", "test"],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "probe": "node scripts/probe.mjs",
+    "test:host": "node scripts/test-host.mjs",
+    "test:live": "node scripts/test-live.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "magpie": { "name": "Bilingual Bridge", "maxConcurrency": 4 }
+}

@@ -18,6 +18,7 @@ traces/
 cache/
 .data/
 .tmp/
+.sandbox/
 
 # Build / OS
 node_modules/
@@ -25,3 +26,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+coverage/
+*.tgz
+config.local.*
