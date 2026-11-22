@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import Plugin from "../index.mjs";
 import { createBridge } from "../src/bridge.mjs";
-import { configuration } from "../src/config.mjs";
+import { configuration, validateGateway } from "../src/config.mjs";
 import { createTranslator } from "../src/translator.mjs";
 import { protect, splitText, MemoryCache } from "../src/text.mjs";
 
@@ -39,8 +40,6 @@ async function fixture({ translate, upstream, config = {} } = {}) {
   const bridge = await createBridge({ ...options, ...config }, async () => "synthetic-key", {
     logger: (line) => calls.logs.push(line),
     fetcher: async (url, init) => {
-      if (url.endsWith("/api/hello")) return Response.json({ name: "magpie", version: "test" });
-      if (url.endsWith("/v1/models")) return Response.json({ data: [{ id: target }] });
       if (url.startsWith("https://translator.example/")) {
         const body = JSON.parse(init.body);
         calls.translations.push(body);
@@ -466,4 +465,20 @@ test("output code-only blocks pass through byte for byte", async () => {
   const response = await instance.request({ messages: [{ role: "user", content: "Hello" }] });
   assert.equal((await response.json()).content[0].text, source);
   assert.equal(instance.calls.translations.length, 0);
+});
+
+test("provider declares Anthropic model and isolated fetch, and validates loopback gateway URLs", async () => {
+  const hooks = await Plugin({}, { gateway: "http://127.0.0.1:3425", targetModels: { test: "codex/gpt-test" } });
+  const config = {};
+  await hooks.config(config);
+  assert.equal(config.provider.bilingual.npm, "@ai-sdk/anthropic");
+  assert.ok(config.provider.bilingual.models.test);
+  assert.equal(typeof (await hooks.auth.loader()).fetch, "function");
+  for (const address of [
+    "https://example.com", "http://localhost", "http://127.0.0.1@evil.test",
+    "http://127.0.0.1/path", "http://127.0.0.1?next=evil", "ftp://127.0.0.1",
+  ]) {
+    assert.throws(() => validateGateway(address));
+  }
+  assert.equal(validateGateway("http://[::1]:3425"), "http://[::1]:3425");
 });

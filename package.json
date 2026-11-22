@@ -10,7 +10,6 @@
     "build": "node scripts/build-page.mjs",
     "prepack": "npm run build",
     "test": "node --test test/*.test.mjs",
-    "probe": "node scripts/probe.mjs",
     "test:host": "node scripts/test-host.mjs",
     "test:live": "node scripts/test-live.mjs"
   },
