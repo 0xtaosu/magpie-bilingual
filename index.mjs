@@ -4,7 +4,7 @@ import { configuration } from "./src/config.mjs";
 export default async function BilingualBridge(_input, options = {}) {
   const settings = await configuration(options);
   const models = Object.fromEntries(Object.keys(settings.targetModels).map((alias) => [alias, {
-    name: `双语桥接 · ${alias}`,
+    name: `双语翻译代理 · ${alias}`,
     tool_call: true,
     modalities: { input: ["text", "image"] },
   }]));
@@ -12,7 +12,7 @@ export default async function BilingualBridge(_input, options = {}) {
     config: async (config) => {
       config.provider ??= {};
       config.provider.bilingual ??= {
-        name: "双语桥接",
+        name: "双语翻译代理",
         npm: "@ai-sdk/anthropic",
         api: "https://bilingual.invalid/v1",
         models,

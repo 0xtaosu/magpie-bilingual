@@ -74,7 +74,7 @@ const snapshot = () => JSON.stringify(readForm());
 function restingMessage() {
   if (!knownIds.length) return "未检测到可用供应商，请先在「供应商」页添加并启用工作模型。";
   if (!element("model").value.trim() || !element("translator-model").value.trim()) {
-    return "首次配置请补全工作模型与翻译模型，并在「供应商 › 双语桥接」中填写翻译 API Key。";
+    return "首次配置请补全工作模型与翻译模型，并在「供应商 › 双语翻译代理」中填写翻译 API Key。";
   }
   return "";
 }
@@ -227,7 +227,7 @@ async function start() {
       renderRouteTabs(select);
       baseline = snapshot();
       if (isNewAlias) {
-        status(`已保存。请在「插件」页重新加载本插件，并在「供应商 › 双语桥接」中启用 bilingual/${alias}。`, false, "success");
+        status(`已保存。请在「插件」页重新加载本插件，并在「供应商 › 双语翻译代理」中启用 bilingual/${alias}。`, false, "success");
       } else if (current.previewInput === true && !previousPreview) {
         status("已保存。请在「插件」页重新加载本插件；之后对话将仅返回译文预览。", false, "success");
       } else if (current.previewInput !== true && previousPreview) {
