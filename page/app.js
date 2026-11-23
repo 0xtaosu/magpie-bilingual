@@ -7,17 +7,37 @@ const status = (text, error = false, tone = "") => {
   node.dataset.error = String(error);
   node.dataset.tone = tone;
 };
+
+const FIELD_IDS = [
+  "alias", "provider", "model", "base-url", "translator-model",
+  "enabled", "preview-input", "input-translation", "output-translation",
+];
+
 let current = {};
 let knownIds = [];
 let baseline = "";
 
-function preview() {
-  const alias = element("alias").value.trim();
+function readForm() {
   const resolved = resolveModelInput(element("provider").value, element("model").value, knownIds);
+  return {
+    alias: element("alias").value.trim(),
+    provider: resolved.provider,
+    model: resolved.model,
+    baseURL: normalizeBaseURL(element("base-url").value),
+    translatorModel: element("translator-model").value.trim(),
+    enable: element("enabled").checked,
+    previewInput: element("preview-input").checked,
+    inputTranslation: element("input-translation").checked,
+    outputTranslation: element("output-translation").checked,
+  };
+}
+
+function preview() {
+  const { alias, provider, model } = readForm();
   const node = element("route-preview");
-  if (alias && resolved.provider && resolved.model) {
+  if (alias && provider && model) {
     node.dataset.empty = "false";
-    node.textContent = `客户端模型  bilingual/${alias}  →  工作模型  ${resolved.provider}/${resolved.model}`;
+    node.textContent = `客户端模型  bilingual/${alias}  →  工作模型  ${provider}/${model}`;
   } else {
     node.dataset.empty = "true";
     node.textContent = `填写模型 ID 后，可在客户端选用 bilingual/${alias || "coding"}`;
@@ -38,40 +58,23 @@ function syncPreviewNotice() {
   const savedOn = current.previewInput === true;
   const checked = element("preview-input").checked;
   const notice = element("preview-notice");
-  if (savedOn && checked) {
-    notice.hidden = false;
-    notice.textContent = "当前处于「仅预览发出的译文」调试模式：对话只会返回译后文本，不会调用工作模型。排查完成后请关闭此项，保存并重新加载插件。";
-  } else if (!savedOn && checked) {
-    notice.hidden = false;
-    notice.textContent = "即将开启「仅预览发出的译文」：保存并重新加载插件后，对话只会返回译后文本，不会调用工作模型。";
-  } else if (savedOn && !checked) {
-    notice.hidden = false;
-    notice.textContent = "已取消「仅预览发出的译文」：请点击「保存设置」并重新加载插件，恢复工作模型正常回复。";
-  } else {
-    notice.hidden = true;
-    notice.textContent = "";
-  }
+  const message = savedOn && checked
+    ? "当前处于「仅预览发出的译文」调试模式：对话只会返回译后文本，不会调用工作模型。排查完成后请关闭此项，保存并重新加载插件。"
+    : !savedOn && checked
+      ? "即将开启「仅预览发出的译文」：保存并重新加载插件后，对话只会返回译后文本，不会调用工作模型。"
+      : savedOn && !checked
+        ? "已取消「仅预览发出的译文」：请点击「保存设置」并重新加载插件，恢复工作模型正常回复。"
+        : "";
+  notice.hidden = !message;
+  notice.textContent = message;
 }
 
-function snapshot() {
-  const resolved = resolveModelInput(element("provider").value, element("model").value, knownIds);
-  return JSON.stringify({
-    alias: element("alias").value.trim(),
-    provider: resolved.provider,
-    model: resolved.model,
-    baseURL: normalizeBaseURL(element("base-url").value),
-    translatorModel: element("translator-model").value.trim(),
-    enable: element("enabled").checked,
-    previewInput: element("preview-input").checked,
-    inputTranslation: element("input-translation").checked,
-    outputTranslation: element("output-translation").checked,
-  });
-}
+const snapshot = () => JSON.stringify(readForm());
 
 function restingMessage() {
   if (!knownIds.length) return "未检测到可用供应商，请先在「供应商」页添加并启用工作模型。";
   if (!element("model").value.trim() || !element("translator-model").value.trim()) {
-    return "首次配置请补全工作模型与翻译模型，并在「供应商 › 双语桥接」中填写翻译 API Key。";
+    return "首次配置请补全工作模型与翻译模型，并在「供应商 › 双语翻译代理」中填写翻译 API Key。";
   }
   return "";
 }
@@ -174,11 +177,7 @@ async function start() {
   element("input-translation").checked = current.inputTranslation !== false;
   element("output-translation").checked = current.outputTranslation !== false;
 
-  const fieldIds = [
-    "alias", "provider", "model", "base-url", "translator-model",
-    "enabled", "preview-input", "input-translation", "output-translation",
-  ];
-  for (const id of fieldIds) {
+  for (const id of FIELD_IDS) {
     element(id).addEventListener("input", () => onFieldInput(select));
     element(id).addEventListener("change", () => onFieldInput(select));
   }
@@ -215,15 +214,9 @@ async function start() {
     button.textContent = "保存中…";
     status("正在保存…");
     try {
-      const next = makeOptions(current, {
-        alias: element("alias").value, provider: select.value, model: element("model").value,
-        baseURL: element("base-url").value, translatorModel: element("translator-model").value,
-        enable: element("enabled").checked,
-        previewInput: element("preview-input").checked,
-        inputTranslation: element("input-translation").checked,
-        outputTranslation: element("output-translation").checked,
-      });
-      const alias = aliasInput.value.trim();
+      const form = readForm();
+      const next = makeOptions(current, form);
+      const { alias } = form;
       const isNewAlias = !(alias in previousTargets);
       current = await magpie.options.set(next);
       element("alias").value = alias;
@@ -234,7 +227,7 @@ async function start() {
       renderRouteTabs(select);
       baseline = snapshot();
       if (isNewAlias) {
-        status(`已保存。请在「插件」页重新加载本插件，并在「供应商 › 双语桥接」中启用 bilingual/${alias}。`, false, "success");
+        status(`已保存。请在「插件」页重新加载本插件，并在「供应商 › 双语翻译代理」中启用 bilingual/${alias}。`, false, "success");
       } else if (current.previewInput === true && !previousPreview) {
         status("已保存。请在「插件」页重新加载本插件；之后对话将仅返回译文预览。", false, "success");
       } else if (current.previewInput !== true && previousPreview) {

@@ -38,7 +38,7 @@ export function makeOptions(current, form) {
     throw new Error("模型别名需以字母或数字开头，仅限字母、数字、点、下划线或短横线。");
   }
   if (!/^[a-zA-Z0-9][\w.-]*$/.test(provider) || ["bilingual", "group"].includes(provider.toLowerCase())) {
-    throw new Error("请选择有效的工作模型供应商（不可选择双语桥接自身或分组路由）。");
+    throw new Error("请选择有效的工作模型供应商（不可选择双语翻译代理自身或分组路由）。");
   }
   if (!model) {
     throw new Error("请填写工作模型的模型 ID。");

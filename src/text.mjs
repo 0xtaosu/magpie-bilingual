@@ -3,47 +3,70 @@ import { randomBytes, createHash } from "node:crypto";
 export const hasChinese = (text) => /\p{Script=Han}/u.test(text);
 export const digest = (text) => createHash("sha256").update(text).digest("hex");
 
+// Sequential protection rules ordered from largest structural blocks to inline technical tokens.
+const BLOCK_RULES = [
+  // PEM keys and system/command XML tags
+  /-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----|<(system-reminder|local-command-stdout|local-command-stderr)>[\s\S]*?<\/\1>/g,
+  // Fenced code blocks and inline backtick code
+  /(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1[ \t]*(?=\n|$)|$)|`+[^`\n]+`+/g,
+  // Declarations and assignments
+  /(?:^|\n)[ \t]*(?:(?:const|let|var|import|function|class|def|from|return|throw)\s+[^\n]+|[A-Za-z_]\w*\s*=\s*[^\n]+)/g,
+  // Indented code lines, control-flow headers, comments, and call lines
+  /(?:^|\n)(?:[ \t]{4,}\S[^\n]*|[ \t]*(?:(?:if|for|while|switch|catch|with)\s*\([^\n]*|(?:if|for|while|elif|else|try|except|finally)\b[^\n]*:|(?:async\s+)?(?:function|def|class|public|private|protected|interface|struct|enum|fn|func)\b[^\n]*|(?:\/\/|\/\*|\* |# |[{};])[^\n]*|[\w$.]+\s*\([^\n]*))/g,
+];
+
+const CALL_EXPRESSION_RULE = /\b(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\s*\((?:[^()"'`\n]|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)*\)/g;
+const SECRET_ASSIGNMENT_RULE = /\b(?:api[_-]?key|password|secret|token)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi;
+const SHELL_COMMAND_RULE = /(?:^|\n)(?:[ \t]*)(?:\$ |> )?(?:npm|pnpm|yarn|bun|git|curl|wget|ssh|sudo|docker|kubectl|node|python3?|pip3?|cd|ls|cat|rm|mkdir|chmod|export)\s+[^\n]+/g;
+const JSON_FRAGMENT_RULE = /\{[^{}]*\}|\[[^\[\]\n]*\]/g;
+const INLINE_TOKEN_RULE = /https?:\/\/[^\s<>"'`，。；！？）]+|(?:\/|~\/|[A-Za-z]:\\)[\w./\\@~+\-\p{Script=Han}]+|[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}|(?:sk|ghp|gho|github_pat)-?[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._~-]+|\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b|\$\{[^}]+\}|\$[A-Za-z_]\w*|<[A-Za-z][^>\n]*>|\b[A-Za-z]\w*(?:[._/-][\w.-]+)+\b|\b[a-z]+[A-Z]\w*\b|\b[A-Z][A-Z0-9_]+\b|\b\d+(?:\.\d+)*\b/gu;
+
 export function protect(text) {
   const prefix = `__BP_${randomBytes(8).toString("hex")}_`;
+  const tokenPattern = new RegExp(`${prefix}(\\d+)__`, "g");
   const values = [];
-  const store = (value) => {
-    const expanded = value.replace(new RegExp(`${prefix}(\\d+)__`, "g"), (_, index) => values[Number(index)]);
-    return `${prefix}${values.push(expanded) - 1}__`;
-  };
-  let masked = text.replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----|<(system-reminder|local-command-stdout|local-command-stderr)>[\s\S]*?<\/\1>/g, store);
-  masked = masked.replace(/(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1[ \t]*(?=\n|$)|$)|`+[^`\n]+`+/g, store);
-  masked = masked.replace(/(?:^|\n)[ \t]*(?:(?:const|let|var|import|function|class|def|from|return|throw)\s+[^\n]+|[A-Za-z_]\w*\s*=\s*[^\n]+)/g, store);
-  masked = masked.replace(/(?:^|\n)(?:[ \t]{4,}\S[^\n]*|[ \t]*(?:(?:if|for|while|switch|catch|with)\s*\([^\n]*|(?:if|for|while|elif|else|try|except|finally)\b[^\n]*:|(?:async\s+)?(?:function|def|class|public|private|protected|interface|struct|enum|fn|func)\b[^\n]*|(?:\/\/|\/\*|\* |# |[{};])[^\n]*|[\w$.]+\s*\([^\n]*))/g, store);
+  const expand = (value) => value.replace(tokenPattern, (_, index) => values[Number(index)]);
+  const store = (value) => `${prefix}${values.push(expand(value)) - 1}__`;
+
+  let masked = text;
+  for (const rule of BLOCK_RULES) masked = masked.replace(rule, store);
+
   let previous;
   do {
     previous = masked;
-    masked = masked.replace(/\b(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\s*\((?:[^()"'`\n]|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)*\)/g, store);
+    masked = masked.replace(CALL_EXPRESSION_RULE, store);
   } while (previous !== masked);
-  masked = masked.replace(/\b(?:api[_-]?key|password|secret|token)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, store);
-  masked = masked.replace(/(?:^|\n)(?:[ \t]*)(?:\$ |> )?(?:npm|pnpm|yarn|bun|git|curl|wget|ssh|sudo|docker|kubectl|node|python3?|pip3?|cd|ls|cat|rm|mkdir|chmod|export)\s+[^\n]+/g, store);
-  masked = masked.replace(/\{[^{}]*\}|\[[^\[\]\n]*\]/g, (value) => {
-    try { JSON.parse(value); return store(value); } catch { return value; }
-  });
+
+  masked = masked
+    .replace(SECRET_ASSIGNMENT_RULE, store)
+    .replace(SHELL_COMMAND_RULE, store)
+    .replace(JSON_FRAGMENT_RULE, (value) => {
+      try { JSON.parse(value); return store(value); } catch { return value; }
+    });
+
   do {
     previous = masked;
-    masked = masked.replace(/\{[^{}]*\}|\[[^\[\]\n]*\]/g, (value) => {
-      if (!value.includes(prefix)) return value;
-      return store(value.replace(new RegExp(`${prefix}(\\d+)__`, "g"), (_, index) => values[Number(index)]));
-    });
+    masked = masked.replace(JSON_FRAGMENT_RULE, (value) => (value.includes(prefix) ? store(value) : value));
   } while (previous !== masked);
-  masked = masked.replace(/https?:\/\/[^\s<>"'`，。；！？）]+|(?:\/|~\/|[A-Za-z]:\\)[\w./\\@~+\-\p{Script=Han}]+|[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}|(?:sk|ghp|gho|github_pat)-?[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._~-]+|\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b|\$\{[^}]+\}|\$[A-Za-z_]\w*|<[A-Za-z][^>\n]*>|\b[A-Za-z]\w*(?:[._/-][\w.-]+)+\b|\b[a-z]+[A-Z]\w*\b|\b[A-Z][A-Z0-9_]+\b|\b\d+(?:\.\d+)*\b/gu, (value) => value.startsWith(prefix) ? value : store(value));
-  const tokens = [...masked.matchAll(new RegExp(`${prefix}\\d+__`, "g"))].map((match) => match[0]);
+
+  masked = masked.replace(INLINE_TOKEN_RULE, (value) => (value.startsWith(prefix) ? value : store(value)));
+
+  const exactTokenPattern = new RegExp(`${prefix}\\d+__`, "g");
+  const expectedTokens = [...masked.matchAll(exactTokenPattern)].map((match) => match[0]);
+
   return {
     masked,
-    plain: masked.replace(new RegExp(`${prefix}\\d+__`, "g"), ""),
+    plain: masked.replace(exactTokenPattern, ""),
     restore(translated) {
       if (typeof translated !== "string" || !translated.trim()) throw new Error("BILINGUAL_EMPTY_TRANSLATION");
-      const actual = translated.match(new RegExp(`${prefix}\\d+__`, "g")) ?? [];
-      if (actual.length !== tokens.length || tokens.some((token) => actual.filter((found) => found === token).length !== 1)
-        || translated.replace(new RegExp(`${prefix}\\d+__`, "g"), "").includes("__BP_")) {
+      const actualTokens = translated.match(exactTokenPattern) ?? [];
+      const hasExactTokens = actualTokens.length === expectedTokens.length
+        && expectedTokens.every((token) => actualTokens.filter((found) => found === token).length === 1);
+      const hasStrayMarker = translated.replace(exactTokenPattern, "").includes("__BP_");
+      if (!hasExactTokens || hasStrayMarker) {
         throw new Error("BILINGUAL_PLACEHOLDER_MISMATCH");
       }
-      return translated.replace(new RegExp(`${prefix}(\\d+)__`, "g"), (_, index) => values[Number(index)]);
+      return expand(translated);
     },
   };
 }

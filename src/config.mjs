@@ -1,4 +1,32 @@
-import { discoverGateway, validateGateway } from "./probe.mjs";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+const DEFAULT_GATEWAY = "http://127.0.0.1:3425";
+const DEFAULT_TRANSLATOR_ORIGIN = "https://api.deepseek.com";
+const ALIAS_PATTERN = /^[a-zA-Z0-9][\w.-]*$/;
+const TARGET_PATTERN = /^[^/\s]+\/[^/\s]+$/;
+const VIRTUAL_PROVIDER_PATTERN = /^(bilingual|group)\//i;
+
+export function validateGateway(url = DEFAULT_GATEWAY) {
+  const parsed = new URL(url);
+  const isLoopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]";
+  if (parsed.protocol !== "http:" || !isLoopback || parsed.username || parsed.password
+    || parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error("BILINGUAL_INVALID_GATEWAY");
+  }
+  return parsed.origin;
+}
+
+export async function discoverGateway() {
+  if (process.env.MAGPIE_GATEWAY) return validateGateway(process.env.MAGPIE_GATEWAY);
+  try {
+    const statePath = join(homedir(), ".local", "state", "magpie", "gateway.json");
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    if (typeof state.addr === "string" && state.addr) return validateGateway(`http://${state.addr}`);
+  } catch {}
+  return DEFAULT_GATEWAY;
+}
 
 function integer(value, fallback, min, max) {
   const result = value ?? fallback;
@@ -14,20 +42,24 @@ export async function configuration(options = {}) {
   if ("apiKey" in translator || "key" in translator || "apiKey" in options) {
     throw new Error("BILINGUAL_USE_PROTECTED_AUTH");
   }
-  const base = new URL(translator.baseURL ?? "https://api.deepseek.com");
-  const trustedOrigins = translator.trustedOrigins ?? ["https://api.deepseek.com"];
+  const base = new URL(translator.baseURL ?? DEFAULT_TRANSLATOR_ORIGIN);
+  const trustedOrigins = translator.trustedOrigins ?? [DEFAULT_TRANSLATOR_ORIGIN];
   if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash
     || !Array.isArray(trustedOrigins) || !trustedOrigins.includes(base.origin)) {
     throw new Error("BILINGUAL_UNTRUSTED_TRANSLATOR");
   }
+
   const targetModels = options.targetModels ?? {};
-  if (!targetModels || Array.isArray(targetModels) || typeof targetModels !== "object") throw new Error("BILINGUAL_INVALID_MODELS");
+  if (!targetModels || Array.isArray(targetModels) || typeof targetModels !== "object") {
+    throw new Error("BILINGUAL_INVALID_MODELS");
+  }
   for (const [alias, target] of Object.entries(targetModels)) {
-    if (!/^[a-zA-Z0-9][\w.-]*$/.test(alias) || typeof target !== "string"
-      || !/^[^/\s]+\/[^/\s]+$/.test(target) || /^(bilingual|group)\//i.test(target)) {
+    if (!ALIAS_PATTERN.test(alias) || typeof target !== "string"
+      || !TARGET_PATTERN.test(target) || VIRTUAL_PROVIDER_PATTERN.test(target)) {
       throw new Error("BILINGUAL_INVALID_TARGET");
     }
   }
+
   for (const key of ["enable", "inputTranslation", "outputTranslation", "translateSystem", "previewInput"]) {
     if (options[key] !== undefined && typeof options[key] !== "boolean") throw new Error("BILINGUAL_INVALID_CONFIG");
   }

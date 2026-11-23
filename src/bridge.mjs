@@ -2,50 +2,17 @@ import { randomUUID } from "node:crypto";
 import { configuration } from "./config.mjs";
 import { digest, hasChinese, MemoryCache } from "./text.mjs";
 import { createTranslator, readLimited } from "./translator.mjs";
-import { translateStream } from "./sse.mjs";
-import { inspectGateway } from "./probe.mjs";
+import {
+  createPreviewResponse,
+  passthroughResponse,
+  transformAssistantPayload,
+  transformRequestBody,
+  translateStream,
+} from "./protocol.mjs";
 
 const failure = (code, status = 400) => Response.json({
   type: "error", error: { type: "invalid_request_error", message: code },
 }, { status });
-
-function previewResponse(body) {
-  const lines = [`预览：将发送给 ${body.model} 的文本（本次未调用工作模型）`, ""];
-  if (body.system !== undefined) {
-    lines.push("system:");
-    lines.push(...previewText(body.system));
-  }
-  for (const entry of body.messages) {
-    lines.push(`${entry.role}:`);
-    lines.push(...previewText(entry.content));
-  }
-  lines.push("", "注：代码保持原文；图片、工具结果等非文本内容未在此处展示，正常对话中会原样转发。排查完成后，请在插件设置中关闭「仅预览发出的译文」，保存并重新加载插件以恢复正常回复。");
-  const text = lines.join("\n");
-  const result = {
-    id: `msg_preview_${randomUUID()}`, type: "message", role: "assistant", model: body.model,
-    content: [{ type: "text", text }], stop_reason: "end_turn", stop_sequence: null,
-    usage: { input_tokens: 0, output_tokens: 0 },
-  };
-  if (!body.stream) return Response.json(result, { headers: { "cache-control": "no-store" } });
-  const events = [
-    { type: "message_start", message: { ...result, content: [], stop_reason: null } },
-    { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
-    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } },
-    { type: "content_block_stop", index: 0 },
-    { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 0 } },
-    { type: "message_stop" },
-  ];
-  return new Response(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""), {
-    headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
-  });
-}
-
-function previewText(content) {
-  if (typeof content === "string") return [content];
-  if (!Array.isArray(content)) return ["[非文本内容]"];
-  return content.map((block) => block.type === "text" && typeof block.text === "string"
-    ? block.text : `[${block.type ?? "非文本内容"}，未显示]`);
-}
 
 export async function createBridge(options, getKey, { fetcher = fetch, logger = console.warn } = {}) {
   const config = await configuration(options);
@@ -84,44 +51,26 @@ export async function createBridge(options, getKey, { fetcher = fetch, logger = 
       const alias = body.model.replace(/^bilingual\//, "");
       const target = Object.hasOwn(config.targetModels, alias) ? config.targetModels[alias] : undefined;
       if (!target) return failure("BILINGUAL_UNKNOWN_MODEL");
-      const catalog = await inspectGateway(config.gateway, fetcher, signal);
-      if (!catalog.nativeModels.includes(target)) return failure("BILINGUAL_TARGET_NOT_ENABLED");
       if (config.previewInput && path.endsWith("/count_tokens")) {
         return Response.json({ input_tokens: 0 }, { headers: { "cache-control": "no-store" } });
       }
       const sessionId = request.headers.get("x-magpie-session") || body.metadata?.user_id;
       const session = typeof sessionId === "string" && sessionId ? digest(sessionId) : "";
-      const restore = (text) => {
+      const restoreEnglish = (text) => {
         if (!session) { if (hasChinese(text)) report("history_session_missing"); return text; }
         const previous = history.get(`${session}:${digest(text)}`);
         if (previous === undefined && hasChinese(text)) report("history_miss");
         return previous ?? text;
       };
-      const transformContent = async (content, transform) => {
-        if (typeof content === "string") return transform(content);
-        if (!Array.isArray(content)) throw new Error("BILINGUAL_INVALID_CONTENT");
-        const result = [];
-        for (const block of content) {
-          if (!block || typeof block.type !== "string") throw new Error("BILINGUAL_INVALID_CONTENT");
-          result.push(block.type === "text" && typeof block.text === "string"
-            ? { ...block, text: await transform(block.text) } : block);
-        }
-        return result;
-      };
-      if (config.enable) {
-        for (const message of body.messages) {
-          if (message.role === "user" && config.inputTranslation) {
-            message.content = await transformContent(message.content, (text) => translate(text, "en", signal, session));
-          } else if (message.role === "assistant") {
-            message.content = await transformContent(message.content, restore);
-          }
-        }
-        if (config.translateSystem && config.inputTranslation && body.system !== undefined) {
-          body.system = await transformContent(body.system, (text) => translate(text, "en", signal, session));
-        }
-      }
+      await transformRequestBody(body, {
+        enable: config.enable,
+        inputTranslation: config.inputTranslation,
+        translateSystem: config.translateSystem,
+        toEnglish: (text) => translate(text, "en", signal, session),
+        restoreEnglish,
+      });
       body.model = target;
-      if (config.previewInput) return previewResponse(body);
+      if (config.previewInput) return createPreviewResponse(body);
       const headers = new Headers({
         authorization: "Bearer magpie-bilingual",
         "content-type": "application/json",
@@ -138,7 +87,7 @@ export async function createBridge(options, getKey, { fetcher = fetch, logger = 
       const outputHeaders = new Headers(response.headers);
       outputHeaders.delete("content-length");
       outputHeaders.delete("content-encoding");
-      const output = async (text) => {
+      const toChinese = async (text) => {
         try {
           const result = await translate(text, "zh", signal, session);
           if (session && result !== text) history.set(`${session}:${digest(result)}`, text);
@@ -154,23 +103,8 @@ export async function createBridge(options, getKey, { fetcher = fetch, logger = 
         }
       };
       if (!response.ok || !config.enable || !config.outputTranslation || path.endsWith("/count_tokens")) {
-        const reader = response.body?.getReader();
-        if (!reader) return response;
-        const abort = () => { void reader.cancel().catch(() => {}); finish(); };
-        const cleanup = () => { signal.removeEventListener("abort", abort); finish(); };
-        signal.addEventListener("abort", abort, { once: true });
-        streaming = true;
-        return new Response(new ReadableStream({
-          async pull(streamController) {
-            try {
-              signal.throwIfAborted();
-              const next = await reader.read();
-              if (next.done) { cleanup(); streamController.close(); }
-              else streamController.enqueue(next.value);
-            } catch (error) { cleanup(); streamController.error(error); }
-          },
-          async cancel(reason) { controller.abort(); cleanup(); await reader.cancel(reason); },
-        }), { status: response.status, statusText: response.statusText, headers: outputHeaders });
+        streaming = Boolean(response.body);
+        return passthroughResponse(response, outputHeaders, signal, () => controller.abort(), finish);
       }
       if (body.stream) {
         if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
@@ -178,19 +112,11 @@ export async function createBridge(options, getKey, { fetcher = fetch, logger = 
           throw new Error("BILINGUAL_INVALID_SSE_RESPONSE");
         }
         streaming = true;
-        return new Response(translateStream(response.body, output, signal, config.maxTextChars, report,
+        return new Response(translateStream(response.body, toChinese, signal, config.maxTextChars, report,
           () => controller.abort(), finish), { status: response.status, headers: outputHeaders });
       }
-      const result = JSON.parse(await readLimited(response, config.maxBodyBytes, signal));
-      if (result.type !== "message" || result.role !== "assistant" || !Array.isArray(result.content)) {
-        throw new Error("BILINGUAL_INVALID_RESPONSE");
-      }
-      for (const block of result.content) {
-        if (block.type === "text" && typeof block.text === "string") {
-          if (block.citations?.length) report("citations_passthrough");
-          else block.text = await output(block.text);
-        }
-      }
+      const rawPayload = JSON.parse(await readLimited(response, config.maxBodyBytes, signal));
+      const result = await transformAssistantPayload(rawPayload, toChinese, report);
       outputHeaders.set("content-type", "application/json");
       return new Response(JSON.stringify(result), { status: response.status, headers: outputHeaders });
     } catch (error) {
