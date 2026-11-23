@@ -1,40 +1,87 @@
 # 双语桥接
 
-MAGPIE 原生双向翻译 Provider 插件。Claude Code 通过 Anthropic Messages API 使用 `bilingual/*` 模型：中文自然语言先译为英文，目标模型的英文说明再译成简体中文。**图片透传，代码不翻译；只处理自然语言文字。**
+MAGPIE 原生双向翻译插件：让你用中文提问、用中文看回复，而底层工作模型全程接收和输出英文。
 
-目标模型不限于 Claude：支持 MAGPIE 已启用的 Codex、Claude、Grok 等原生 `provider/model`。协议转换和原账户鉴权由 MAGPIE 完成。插件不读取其他 Provider 的订阅凭据、不修改 MAGPIE 源码、不部署独立代理。
+```text
+你（中文提问） ──▶ 翻译服务（译为英文） ──▶ 工作模型（Codex / Claude / Grok 等）
+                                                      │
+你（中文回复） ◀── 翻译服务（译回中文） ◀──────────────┘
+```
 
-版本：`0.2.0`，候选实现。自动回归、隔离宿主加载及真实 Codex 回环已验证；真实 DeepSeek Flash → Codex → DeepSeek Flash 的单轮请求也已通过，翻译质量与性能仍需完整验收。具体证据和限制见 [P0 报告](docs/p0-report.md)。
+- **只译自然语言**：图片、代码块、行内代码、路径、命令、JSON 与工具调用均原样透传或保留。
+- **不限工作模型**：支持 MAGPIE 中任意已启用的原生模型（Codex、Claude、Grok 等），协议转换与原账号鉴权由 MAGPIE 负责。
+- **零侵入、无额外代理**：不修改 MAGPIE 源码，不读取其他供应商凭据，翻译 API Key 由 MAGPIE 受保护存储统一管理。
 
-## 安装与配置
+---
 
-需要正在运行的 MAGPIE、至少一个已启用的原生模型，以及一个 OpenAI-compatible 翻译服务的 API Key。运行插件使用 MAGPIE 自带的 Bun 宿主，无需安装本项目依赖或构建。
+## 快速开始（5 分钟配置）
 
-### 可视化设置页
+### 准备工作
+1. 正在运行的 **MAGPIE**（插件直接运行在 MAGPIE 内置环境中，无需额外安装 Node 依赖）。
+2. 至少一个已在 MAGPIE 中启用的**工作模型**（例如 `codex/gpt-5.4`）。
+3. 一个兼容 OpenAI Chat Completions 协议的**翻译服务 API Key**（例如 DeepSeek）。
 
-打开 MAGPIE 窗口左侧 **插件 › 双语桥接**。页面按「工作模型 → 翻译服务 → 翻译规则」组织常用项，客户端模型别名与译文预览调试位于折叠的「高级与调试」中，并沿用 MAGPIE 原生控件与主题样式。修改设置后点击「保存设置」，并在 **插件** 页重新加载本插件使其生效；新增别名若未出现在模型目录，还需前往 **供应商 › 双语桥接 › 模型** 中启用。首次配置或更换翻译服务后，请在 **供应商 › 双语桥接** 中更新对应的 API Key。
+### 1. 安装插件
+在 MAGPIE 左侧进入 **插件 → 添加插件**，选择本仓库文件夹；或通过命令行添加：
 
-若需核对实际发送给工作模型的英文，展开「高级与调试」勾选「仅预览发出的译文（调试模式）」，保存并重新加载插件后用 `bilingual/别名` 发起测试对话。开启期间插件只会在对话中回显处理后的 user、历史和 system 文本，**不会调用工作模型**；图片和工具结果仅标记为未显示，代码仍保留原文。排查完成后请关闭该开关、保存并重新加载插件，页面顶部也会在预览模式开启期间给出醒目提醒。预览内容仅在当次响应中返回，不写入插件日志或设置（聊天客户端可能自行保存会话记录）。预览仍会调用所配置的翻译服务；若关闭输入翻译或双语翻译总开关，预览会如实显示未翻译原文。预览期间 token 计数请求返回 0，以保证客户端正常展示诊断回复。
+```sh
+magpie plugin add /absolute/path/to/magpie-bilingual
+```
 
-页面可读取 MAGPIE 的供应商列表，但官方页面接口暂不提供模型目录读取权限，因此模型 ID 需从 MAGPIE 模型目录复制（直接粘贴 `供应商/模型` 会自动拆分识别）。当已配置多个虚拟别名时，页面顶部会显示路由切换标签，方便随时切换编辑不同别名并保留其余映射。
+> macOS 若 `magpie` 未加入 `PATH`，可使用 `/Applications/magpie.app/Contents/MacOS/magpie`。
 
-如果窗口未显示设置页，确认已安装本项目最新版并在 MAGPIE 的 Plugins 页面重新加载插件；下面的命令行配置仍可使用。
+### 2. 配置工作模型与翻译服务
+打开 MAGPIE 左侧 **插件 › 双语桥接**：
 
-### 命令行配置
+1. **工作模型**：选择上游供应商，并填入从 MAGPIE 模型目录复制的**模型 ID**（直接粘贴 `供应商/模型` 会自动拆分识别）。
+2. **翻译服务**：填写 HTTPS **接口地址**（默认 `https://api.deepseek.com`，请求会自动拼接 `/chat/completions`）与**翻译模型**（如 `deepseek-chat`）。
+3. **翻译规则**：按需开关「启用双语翻译」「中文输入译为英文」「模型回复译回中文」。
+4. 点击右下角 **保存设置**，然后到 **插件** 页点击**重新加载**使配置生效。
 
-1. 在 MAGPIE → Plugins → Add a plugin 中选择本项目文件夹，或：
+> 若需配置多个映射，可展开 **高级与调试** 修改「客户端模型别名」并保存，页面顶部会出现路由切换标签，原有别名映射会自动保留。
 
-   ```sh
-   magpie plugin add /absolute/path/to/magpie-bilingual
-   ```
+### 3. 填写翻译 API Key 并启用模型
+1. 进入 MAGPIE 左侧 **供应商 › 双语翻译代理**，填入翻译服务的 **API Key**。
+2. 在该供应商的模型列表中启用 `coding`（或你自定义的别名）。
 
-2. 通过模型目录确认精确目标 ID：
+### 4. 在客户端中使用
+在 Claude Code、T3 Code 或其他支持 Anthropic Messages API 的客户端中，将模型选为 `bilingual/coding` 即可开始对话。
 
-   ```sh
-   node scripts/probe.mjs
-   ```
+---
 
-3. 在插件 Options 中填写下列配置，替换目标模型和翻译模型名。只配置实际想使用的映射，不会自动接管其他模型。
+## 如何确认发给工作模型的是英文？
+
+插件内置了**仅预览发出的译文（调试模式）**，方便你核对翻译效果与代码保留情况：
+
+1. 打开 **插件 › 双语桥接**，展开底部 **高级与调试**。
+2. 勾选 **仅预览发出的译文（调试模式）**，点击 **保存设置** 并在 **插件** 页重新加载插件。
+3. 用 `bilingual/coding` 发送一条测试消息，对话会直接返回处理后的英文内容（**不会调用工作模型，也不写入插件日志**）。
+4. 确认无误后，记得**取消勾选该开关、保存并重新加载插件**，即可恢复正常对话。
+
+---
+
+## 翻译边界与安全保护
+
+| 内容类型 | 处理方式 | 说明 |
+| --- | --- | --- |
+| 用户中文自然语言 | 译为英文 | 翻译失败、超时或残留未翻译中文时会**中止请求**，绝不把未译原文发给工作模型 |
+| 工作模型英文回复 | 译为简体中文 | 默认若输出翻译失败则**回退显示英文原文并附中文提示**；可设为严格报错 |
+| 代码块、行内代码、路径、命令、JSON、URL | 原样保留 | 翻译前用随机占位符保护，还原时校验数量与唯一性（重要源码建议使用 ``` 代码围栏） |
+| 图片、工具调用、`thinking`、引用（citations） | 原样透传 | 不经过翻译服务，保持原始结构、签名与 `usage` |
+| `system` 提示词 | 默认保留原文 | 避免破坏系统指令；如有需要可通过 `translateSystem: true` 开启 |
+
+其他机制说明：
+- **多轮会话缓存**：请求带 `X-Magpie-Session` 或 `metadata.user_id` 时，会在内存中按会话缓存历史译文映射以保持多轮连贯；缓存不落盘，重启插件后清空。
+- **临时关闭翻译**：在设置页取消勾选「启用双语翻译」即可暂停翻译，请求会直接透传给所选工作模型。若要彻底停用，请先在客户端切回原生模型，再在 MAGPIE 中禁用或卸载插件。
+- **隐私与出站控制**：翻译请求仅允许 HTTPS，且受 `translator.trustedOrigins` 白名单限制（禁止 HTTP 与重定向）；常见密钥格式会自动脱敏，但请勿将真实密钥写入插件 Options 或示例中。
+
+---
+
+## 命令行配置（可选）
+
+如果无法打开可视化设置页，或偏好脚本化部署，可直接编辑插件 Options：
+
+1. 在插件 Options 中配置映射与翻译服务（完整无密钥示例见 [config.example.json](config.example.json)）：
 
    ```json
    {
@@ -48,83 +95,65 @@ MAGPIE 原生双向翻译 Provider 插件。Claude Code 通过 Anthropic Message
    }
    ```
 
-   完整无密钥示例见 [config.example.json](config.example.json)。不预设可能过期的模型 ID 或价格。`baseURL` 后直接追加 `/chat/completions`；供应商使用 `/v1` 时把它包含在 `baseURL` 中。其他供应商还需在 `translator.trustedOrigins` 中显式允许其 HTTPS origin。
+   > 使用非 DeepSeek 的翻译服务时，如果服务地址带 `/v1` 请包含在 `baseURL` 中，并在 `translator.trustedOrigins` 中加入其 HTTPS origin。
 
-4. 从 bilingual Provider 的登录入口输入**翻译服务** API Key，或运行 `magpie plugin login bilingual`。凭据由 MAGPIE 的受保护认证存储管理；不要把 key 填进 Options、源码或配置示例。启用翻译意味着所选输入/输出文本会发送给该翻译服务。
-5. 重新加载插件，并在 bilingual Provider 的模型列表中启用 `coding`。如果网关目录仍未显示它，可执行：
+2. 配置翻译服务 API Key 并启用模型：
 
    ```sh
+   magpie plugin login bilingual
    magpie provider models bilingual +coding
    ```
 
-6. 在 Claude Code/MAGPIE 中选择 `bilingual/coding`。API 仍是 Anthropic Messages，后端可以是 Codex。
+3. 在 MAGPIE 中重新加载本插件。
 
-macOS 若 `magpie` 未加入 PATH，可使用 `/Applications/magpie.app/Contents/MacOS/magpie`。插件默认只读发现 `settings.json` 的网关端口，也可显式设置 `gateway: "http://127.0.0.1:端口"`；只接受 IP 字面量回环地址。
+---
 
-## 行为
-
-- 输入：仅处理 user 文本块；保留图片、工具结果、角色、缓存字段和工具定义。system 默认保留；assistant 历史只进行会话内精确匹配恢复，不盲目反译。
-- 代码：代码围栏、行内代码、常见源码行、函数调用、JSON、命令、路径、URL、数字和标识符用随机占位符保护；还原前验证数量与唯一性。无法可靠识别所有语言的裸代码，重要源码请使用代码围栏以明确边界。
-- 失败：输入翻译失败、超时、占位符丢失或仍含待翻译中文时阻断，目标模型调用数为零。输出默认回退原文并添加中文提示；`outputFallback: "error"` 可严格失败。
-- 流式：按完整 text block 缓冲后显示；thinking、签名、工具 JSON、usage 和 stop_reason 保留。未知事件、非法索引或截断流以诊断错误终止，不伪造成功结束。
-- 多轮：有 `X-Magpie-Session` 或 `metadata.user_id` 时，按会话摘要与完整文本摘要缓存；无会话标识则不共享缓存。重启后映射丢失，未命中保留历史原文并记录诊断。
-- 引用：包含 citation 的文本块保守透传，避免翻译破坏引用定位，并记录 `citations_passthrough`；这类文本暂不保证中文化。
-- `enable: false` 时，虚拟模型仍按映射转发但不翻译。彻底移除虚拟模型请在 MAGPIE 关闭或卸载插件；先让客户端选回原生模型。
-- `/v1/messages/count_tokens` 使用相同输入转换后交由原生目标处理；可用性取决于该目标 Provider。
-
-## 配置参考
+## 高级配置参考
 
 | 选项 | 默认 | 说明 |
 | --- | --- | --- |
-| `enable` | `true` | 是否翻译 |
-| `inputTranslation` / `outputTranslation` | `true` | 两个方向独立开关 |
-| `translateSystem` | `false` | 显式允许翻译 system |
-| `previewInput` | `false` | 将处理后的文本显示在聊天中，并跳过本次工作模型调用；诊断后关闭 |
-| `targetModels` | `{}` | 虚拟别名 → 原生模型 ID，必须显式配置 |
-| `gateway` | 只读发现端口 | 只允许回环 IP，不接受远端或重定向 |
+| `enable` | `true` | 翻译总开关 |
+| `inputTranslation` / `outputTranslation` | `true` | 分别控制输入译英、输出译中 |
+| `translateSystem` | `false` | 是否翻译 `system` 提示词 |
+| `previewInput` | `false` | 调试预览模式：仅回显处理后的请求文本，不调用工作模型 |
+| `targetModels` | `{}` | 虚拟别名到原生 `provider/model` 的映射 |
+| `gateway` | 自动读取本地端口 | 仅允许回环 IP（如 `http://127.0.0.1:端口`） |
 | `timeoutMs` | `120000` | 整个请求（含流与翻译）的总时限 |
-| `maxTextChars` | `100000` | 单文本块上限 |
-| `maxBodyBytes` | `20971520` | JSON 请求/响应体上限，含图片 |
-| `cacheTTL` / `cacheEntries` | `1800000` / `256` | 内存缓存有效期（ms）和条数；设 0 可关闭 |
-| `outputFallback` | `"english"` | `"english"` 或 `"error"` |
-| `logLevel` | `"error"` | `"silent"` / `"error"` / `"info"` |
-| `translator.baseURL` | DeepSeek HTTPS origin | OpenAI-compatible 接口 |
-| `translator.model` | 无 | 必填，部署时确认可用模型 |
-| `translator.trustedOrigins` | DeepSeek origin | 显式信任列表 |
+| `maxTextChars` | `100000` | 单文本块最大字符数 |
+| `maxBodyBytes` | `20971520` | JSON 请求/响应体上限（含图片，约 20 MB） |
+| `cacheTTL` / `cacheEntries` | `1800000` / `256` | 会话内存缓存有效期（ms）和最大条数；设为 `0` 可关闭 |
+| `outputFallback` | `"english"` | 输出翻译失败策略：`"english"`（回退原文）或 `"error"`（报错） |
+| `logLevel` | `"error"` | 日志级别：`"silent"` / `"error"` / `"info"` |
+| `translator.baseURL` | `https://api.deepseek.com` | OpenAI-compatible 翻译接口地址 |
+| `translator.model` | 无 | 必填，翻译模型名称 |
+| `translator.trustedOrigins` | `["https://api.deepseek.com"]` | 允许出站的 HTTPS origin 白名单 |
 | `translator.timeoutMs` | `15000` | 单次翻译调用时限 |
-| `translator.retries` | `1` | 额外重试数，最大 3；不可重试 4xx 不重试 |
-| `translator.concurrency` | `3` | 每个翻译账号并发数，等待队列有界 |
-| `translator.chunkChars` | `2000` | 脱敏文本切块大小，不切断占位符 |
+| `translator.retries` | `1` | 额外重试次数（上限 `3`；4xx 鉴权/参数错误不重试） |
+| `translator.concurrency` | `3` | 每个翻译账号的最大并发数 |
+| `translator.chunkChars` | `2000` | 长文本切块大小（自动避开占位符边界） |
 | `translator.temperature` | `0` | 翻译采样温度 |
-| `translator.pricePerMillion` | input/output 均为 0 | 每百万 token 单价；未填不代表服务免费 |
+| `translator.pricePerMillion` | `{ input: 0, output: 0 }` | 每百万 token 单价估算（仅用于 `info` 日志统计） |
 
-info 日志包含翻译调用、成功/失败、缓存命中、耗时、输入/输出 token 和估算费用事件，只统计翻译 API，不记录对话正文和认证信息。流式回退通过可见提示和 `translation_fallback` 日志标识；非流式还带 `x-bilingual-translation-fallback: true`。
+---
 
-内存缓存不写磁盘，但短暂持有译文和还原映射；`logLevel: "silent"` 可关闭本插件日志。上游 MAGPIE 的日志策略由其设置控制。HTTPS 信任名单是出站授权边界：显式加入某个 origin 即允许访问该 origin，包括它解析到的私网目标。插件禁用 HTTP 翻译端点和重定向。常见密钥模式会脱敏，但不能保证识别自然语言中的所有秘密。
+## 本地开发与验证
 
-## 验证
-
-Node.js 22+，无 npm 依赖：
+需要 Node.js 22+（无第三方 npm 依赖）：
 
 ```sh
-npm test
-npm run test:host
-npm run probe -- YOUR_PROVIDER/YOUR_MODEL
-npm run test:live -- YOUR_PROVIDER/YOUR_MODEL
+npm run build                              # 重新打包设置页 bundle.js
+npm test                                   # 运行离线单测与回归测试
+npm run test:host                          # 在隔离 HOME 中验证 MAGPIE 加载插件
+npm run test:live -- YOUR_PROVIDER/MODEL   # 运行实时回环验证（会消耗少量额度）
 ```
 
-- `test`：离线协议、失败、代码保护、隐私与缓存回归。
-- `test:host`：临时隔离 HOME 中检查 MAGPIE 加载生产插件，完成后清理。
-- `probe` 无参数只读检查模型；带模型参数会通过现有账户发出两个小型合成请求。
-- `test:live`：临时 MAGPIE 实例中加载翻译测试替身和原生模型测试转接 Provider，验证同实例回环，再通过既有网关使用目标账户。会消耗少量目标模型额度，不上传真实项目文本，不复制订阅凭据；结束后清理临时实例。
-
-Linux/其他安装位置通过 `MAGPIE_BIN` 指定 MAGPIE 可执行文件。脚本从项目根目录执行。翻译替身只处理合成文本，不能用于真实翻译；生产入口从不加载测试替身。
+> Linux 或自定义安装路径可通过 `MAGPIE_BIN` 指定 MAGPIE 可执行文件。
 
 ## 文档与许可
 
-- [PRD](PRD.md)：原需求及任意原生模型的范围补充。
+- 当前版本：`0.2.0`（候选实现，具体验证结果与限制见 [P0 验证报告](docs/p0-report.md)）
+- [PRD](PRD.md)：原需求及任意原生模型的范围补充
 - [可行性与剩余验收](docs/feasibility.md)
-- [P0 验证报告](docs/p0-report.md)
 - [测试计划](docs/test-plan.md)
 
-尚未选择许可证；包标记为 private 防止误发布。公开仓库可见性不自动授予再分发许可。
+本项目尚未选择开源许可证，且 `package.json` 标记为 `"private": true`。
